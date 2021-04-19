@@ -5,7 +5,7 @@ PYTORCH-IMAGE-SEGMENTATION
 
 ## Description
 
-This project aims to implement biomedical image segmentation with the use of U-Net model to detect breast cancer. The below image briefly explains the output we want:
+This project aims to implement biomedical image segmentation with the use of U-Net model to detect breast cancer. The below image briefly explains the output:
 
 <p align="center">
     <img  height="300" src="reports/figures/aim.png">
@@ -52,17 +52,18 @@ Dataset can be downloaded from [Kaggle Breast Ultrasound Images Dataset](https:/
 
 # Preprocessing
 
-- image resize to [224, 224] (gpu constraints)
+- Image resize to [224, 224] (gpu constraints)
 - Flip
 - Gaussian noise
 
 # Model
 
-smal modifications we made to the u-net model
+Small modifications were made to the u-net model
 
-- input channel = 3
-- output classes = 1 (BinaryCrossEntropy)
-- inpute image size [224, 224]
+- Input channel = 3
+- Output classes = 1 (BinaryCrossEntropy)
+- Input image size [224, 224]
+- Init feature = 32 
 
 <p align="center">
     <img  height="300" src="reports/figures/meunet.png">
@@ -94,9 +95,9 @@ class BCEDiceLoss(nn.Module):
 
 # Dependencies
 
-1. pytorch
+1. Pytorch
 2. PIL
-3. albumentations
+3. Albumentations
 
 # References
 
