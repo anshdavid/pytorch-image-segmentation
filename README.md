@@ -70,7 +70,7 @@ smal modifications we made to the u-net model
 
 # Loss Function
 
-[`loss function`](src/diceloss.py#26) is based on dice coefficiant 
+[`loss function`](src/diceloss.py#L26) is based on dice coefficiant 
 
 
 ``` python
