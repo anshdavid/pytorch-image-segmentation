@@ -1,100 +1,115 @@
-from typing import List, Tuple
+from collections import OrderedDict
+
 import torch
-from torch.functional import Tensor
 import torch.nn as nn
-import torchvision.transforms.functional as TF
-
-from torchsummary import summary
-
-
-class DoubleConv(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super(DoubleConv, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-        )
-
-    def forward(self, x):
-        return self.conv(x)
 
 
 class UNET(nn.Module):
-    def __init__(
-        self,
-        in_channels=3,
-        out_channels=1,
-        features: List[int] = [64, 128, 256, 512],
-    ):
+    def __init__(self, in_channels=3, out_channels=1, init_features=32):
         super().__init__()
-        self.ups = nn.ModuleList()
-        self.downs = nn.ModuleList()
-        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # * down conv
-        for feature in features:
-            self.downs.append(DoubleConv(in_channels, feature))
-            in_channels = feature
+        features = init_features
+        self.encoder1 = UNET._block(in_channels, features, name="enc1")
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.encoder2 = UNET._block(features, features * 2, name="enc2")
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.encoder3 = UNET._block(
+            features * 2, features * 4, name="enc3"
+        )
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.encoder4 = UNET._block(
+            features * 4, features * 8, name="enc4"
+        )
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # * up sampling
-        for feature in reversed(features):
-            self.ups.append(
-                nn.ConvTranspose2d(
-                    feature * 2,
-                    feature,
-                    kernel_size=2,
-                    stride=2,
-                )
-            )
-            self.ups.append(DoubleConv(feature * 2, feature))
-
-        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
-        self.final_conv = nn.Conv2d(
-            features[0], out_channels, kernel_size=1
+        self.bottleneck = UNET._block(
+            features * 8, features * 16, name="bottleneck"
         )
 
-    def forward(self, x: Tensor):
-        skip_connections: List = []
+        self.upconv4 = nn.ConvTranspose2d(
+            features * 16, features * 8, kernel_size=2, stride=2
+        )
+        self.decoder4 = UNET._block(
+            (features * 8) * 2, features * 8, name="dec4"
+        )
+        self.upconv3 = nn.ConvTranspose2d(
+            features * 8, features * 4, kernel_size=2, stride=2
+        )
+        self.decoder3 = UNET._block(
+            (features * 4) * 2, features * 4, name="dec3"
+        )
+        self.upconv2 = nn.ConvTranspose2d(
+            features * 4, features * 2, kernel_size=2, stride=2
+        )
+        self.decoder2 = UNET._block(
+            (features * 2) * 2, features * 2, name="dec2"
+        )
+        self.upconv1 = nn.ConvTranspose2d(
+            features * 2, features, kernel_size=2, stride=2
+        )
+        self.decoder1 = UNET._block(features * 2, features, name="dec1")
 
-        for down in self.downs:
-            x = down(x)
-            skip_connections.append(x)
-            x = self.pool(x)
+        self.conv = nn.Conv2d(
+            in_channels=features, out_channels=out_channels, kernel_size=1
+        )
 
-        x = self.bottleneck(x)
-        skip_connections = skip_connections[::-1]
+    def forward(self, x):
+        enc1 = self.encoder1(x)
+        enc2 = self.encoder2(self.pool1(enc1))
+        enc3 = self.encoder3(self.pool2(enc2))
+        enc4 = self.encoder4(self.pool3(enc3))
 
-        for idx in range(0, len(self.ups), 2):
-            x = self.ups[idx](x)
-            skip_connection = skip_connections[idx // 2]
+        bottleneck = self.bottleneck(self.pool4(enc4))
 
-            if x.shape != skip_connection.shape:
-                x = TF.resize(x, size=skip_connection.shape[2:])
+        dec4 = self.upconv4(bottleneck)
+        dec4 = torch.cat((dec4, enc4), dim=1)
+        dec4 = self.decoder4(dec4)
+        dec3 = self.upconv3(dec4)
+        dec3 = torch.cat((dec3, enc3), dim=1)
+        dec3 = self.decoder3(dec3)
+        dec2 = self.upconv2(dec3)
+        dec2 = torch.cat((dec2, enc2), dim=1)
+        dec2 = self.decoder2(dec2)
+        dec1 = self.upconv1(dec2)
+        dec1 = torch.cat((dec1, enc1), dim=1)
+        dec1 = self.decoder1(dec1)
+        return torch.sigmoid(self.conv(dec1))
 
-            concat_skip = torch.cat((skip_connection, x), dim=1)
-            x = self.ups[idx + 1](concat_skip)
-
-        return self.final_conv(x)
-
-
-def TestModel(input: Tuple = (1, 1, 255, 255)):
-    """
-    Args:
-        input (Tuple): [(batchSize, numChannels, sizeH, sizeW)]. Defaults to (3, 1, 255, 255).
-    """
-    x = torch.randn(input)
-
-    model = UNET(in_channels=1, out_channels=1)
-
-    print(model)
-
-    preds = model(x)
-
-    assert (
-        preds.shape == x.shape
-    ), "shape missmatch preds.shape != input.shape"
-    print("pred shape ", preds.shape, "input shape ", x.shape)
+    @staticmethod
+    def _block(in_channels, features, name):
+        return nn.Sequential(
+            OrderedDict(
+                [
+                    (
+                        name + "conv1",
+                        nn.Conv2d(
+                            in_channels=in_channels,
+                            out_channels=features,
+                            kernel_size=3,
+                            padding=1,
+                            bias=False,
+                        ),
+                    ),
+                    (
+                        name + "norm1",
+                        nn.BatchNorm2d(num_features=features),
+                    ),
+                    (name + "relu1", nn.ReLU(inplace=True)),
+                    (
+                        name + "conv2",
+                        nn.Conv2d(
+                            in_channels=features,
+                            out_channels=features,
+                            kernel_size=3,
+                            padding=1,
+                            bias=False,
+                        ),
+                    ),
+                    (
+                        name + "norm2",
+                        nn.BatchNorm2d(num_features=features),
+                    ),
+                    (name + "relu2", nn.ReLU(inplace=True)),
+                ]
+            )
+        )

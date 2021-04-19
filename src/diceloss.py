@@ -3,17 +3,43 @@ import torch.nn as nn
 
 
 class DiceLoss(nn.Module):
-    __name__ = "dice_loss"
+    def __init__(self, eps: float = 1e-9):
+        super().__init__()
+        self.eps = eps
 
-    def __init__(self, activation="sigmoid"):
-        super(DiceLoss, self).__init__()
-        self.activation = activation
+    def forward(
+        self, logits: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:
 
-    def forward(self, y_pr, y_gt):
-        return 1 - diceCoeffv2(y_pr, y_gt, activation=self.activation)
-        return diceCoeffv2(y_pr, y_gt, activation=self.activation)
+        num = targets.size(0)
+        probability = torch.sigmoid(logits)
+        probability = probability.view(num, -1)
+        targets = targets.view(num, -1)
+        assert probability.shape == targets.shape
+
+        intersection = 2.0 * (probability * targets).sum()
+        union = probability.sum() + targets.sum()
+        dice_score = (intersection + self.eps) / union
+        return 1.0 - dice_score
 
 
+class BCEDiceLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss()
+        self.dice = DiceLoss()
+
+    def forward(
+        self, logits: torch.Tensor, targets: torch.Tensor
+    ) -> torch.Tensor:
+        assert logits.shape == targets.shape
+        dice_loss = self.dice(logits, targets)
+        bce_loss = self.bce(logits, targets)
+
+        return bce_loss + dice_loss
+
+
+# ! NEED TO LEARN
 def diceCoeff(pred, gt, smooth=1e-5, activation="sigmoid"):
 
     if activation is None or activation == "none":

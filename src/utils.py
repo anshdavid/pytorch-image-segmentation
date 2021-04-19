@@ -1,7 +1,5 @@
-from src.diceloss import diceCoeff
 import torch
 import torchvision
-from torch.utils.data import DataLoader
 
 
 def save_checkpoint(state, filename="my_checkpoint.pth.tar"):
@@ -40,6 +38,19 @@ def CheckAccuracy(loader, model, device="cuda"):
     #     f"Got {num_correct}/{num_pixels} with acc {num_correct/num_pixels*100:.2f}"
     # )
     #         dice_score += 1 - diceCoeff(preds, target)
-
     # print(f"validation diceCoeff {dice_score / len(loader)}")
-    # model.train()
+
+    model.train()
+
+
+def InitializeWeights(model):
+    for module in model.modules():
+        if isinstance(
+            module,
+            (
+                torch.nn.Conv2d,
+                torch.nn.ConvTranspose2d,
+                torch.nn.BatchNorm2d,
+            ),
+        ):
+            torch.nn.init.normal_(module.weight.data, 0.0, 0.02)
